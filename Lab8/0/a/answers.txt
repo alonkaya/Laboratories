@@ -1,0 +1,6 @@
+1.the entry point is specified in the e_entry of the ELF header, its value is: 0x80482e0.
+2.a.out has 34 sections.
+3.the size of the text section is 1b8 hex which is:440 dec
+4.yes, there is a symbol _start its virtual adress is 0x80482e0
+5.yes, there is a symbol main its virtual adress is 0x8048388
+6.main offset= main symbol VA - .text VA + .text off =        =0x8048388 - 080482e0 + 2e0 = 388 (hex) 		    
